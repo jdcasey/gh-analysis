@@ -1,0 +1,264 @@
+GET https://api.github.com/
+GET https://api.github.com/user/repos
+Processing repo: aprox-stack-examples
+GET https://api.github.com/repos/jdcasey/aprox-stack-examples/branches
+GET https://api.github.com/repos/Commonjava/aprox-stack-examples/branches
+Processing branch: master
+Using org branch: master
+Diff URL: https://api.github.com/repos/Commonjava/aprox-stack-examples/compare/Commonjava:master...jdcasey:master
+diff --git a/aprox/aprox-depgraph-examples/pom.xml b/aprox/aprox-depgraph-examples/pom.xml
+index 4d85f9a..02719e1 100644
+--- a/aprox/aprox-depgraph-examples/pom.xml
++++ b/aprox/aprox-depgraph-examples/pom.xml
+@@ -18,7 +18,7 @@
+     <enforceStandards>false</enforceStandards>
+     <enforceBestPractices>false</enforceBestPractices>
+     <javaVersion>1.8</javaVersion>
+-    <aproxVersion>0.24.0</aproxVersion>
++    <aproxVersion>0.25.0-SNAPSHOT</aproxVersion>
+   </properties>
+ 
+   <dependencies>
+diff --git a/aprox/aprox-depgraph-examples/src/main/java/org/commonjava/aprox/ex/Gist.java b/aprox/aprox-depgraph-examples/src/main/java/org/commonjava/aprox/ex/Gist.java
+index 7cb7412..13ac7c4 100644
+--- a/aprox/aprox-depgraph-examples/src/main/java/org/commonjava/aprox/ex/Gist.java
++++ b/aprox/aprox-depgraph-examples/src/main/java/org/commonjava/aprox/ex/Gist.java
+@@ -18,9 +18,13 @@
+ import org.commonjava.aprox.client.core.Aprox;
+ import org.commonjava.aprox.client.core.AproxClientException;
+ import org.commonjava.aprox.depgraph.client.DepgraphAproxClientModule;
++import org.commonjava.aprox.depgraph.model.ArtifactRepoContent;
++import org.commonjava.aprox.depgraph.model.ProjectRepoContent;
++import org.commonjava.aprox.depgraph.model.RepoContentResult;
+ import org.commonjava.cartographer.graph.discover.patch.DepgraphPatcherConstants;
+ import org.commonjava.cartographer.request.MetadataCollationRequest;
+ import org.commonjava.cartographer.request.ProjectGraphRequest;
++import org.commonjava.cartographer.request.RepositoryContentRequest;
+ import org.commonjava.cartographer.result.*;
+ import org.commonjava.maven.atlas.graph.model.EProjectCycle;
+ import org.commonjava.maven.atlas.graph.rel.ProjectRelationship;
+@@ -30,8 +34,12 @@
+ import org.commonjava.maven.atlas.ident.ref.SimpleProjectVersionRef;
+ 
+ import java.io.Closeable;
++import java.io.IOException;
++import java.io.InputStream;
+ import java.util.Arrays;
++import java.util.Collections;
+ import java.util.List;
++import java.util.zip.ZipInputStream;
+ 
+ /**
+  * Created by jdcasey on 8/19/15.
+@@ -54,6 +62,66 @@ public Gist( String url )
+         aprox = new Aprox( url, mod ).connect();
+     }
+ 
++    public ZipInputStream zipRepoContent()
++            throws AproxClientException, IOException
++    {
++        ProjectVersionRef pvr = new SimpleProjectVersionRef( "org.commonjava.aprox.launch",
++                                                             "aprox-launcher-savant", "0.24.0" );
++
++        RepositoryContentRequest req = mod.newRepositoryContentRequest()
++                                          .withWorkspaceId( "content-" + pvr.toString() )
++                                          .withSource( "group:public" )
++                                          .withPatcherIds( DepgraphPatcherConstants.ALL_PATCHERS )
++                                          .withResolve( true )
++                                          .withGraphs( mod.newGraphComposition()
++                                                          .withGraph( mod.newGraphDescription()
++                                                                         .withRoots( pvr )
++                                                                         .withPreset( "runtime" )
++                                                                         .build() )
++                                                          .build() )
++                                          .withMetas( RepositoryContentRequest.NO_METAS_SET )
++                                          .build();
++
++        return new ZipInputStream( mod.repositoryZip( req ) );
++    }
++
++    public RepoContentResult graphRepoContent()
++            throws AproxClientException
++    {
++        ProjectVersionRef pvr = new SimpleProjectVersionRef( "org.commonjava.aprox.launch",
++                                                             "aprox-launcher-savant", "0.24.0" );
++
++        RepositoryContentRequest req = mod.newRepositoryContentRequest()
++                                     .withWorkspaceId( "content-" + pvr.toString() )
++                                     .withSource( "group:public" )
++                                     .withPatcherIds( DepgraphPatcherConstants.ALL_PATCHERS )
++                                     .withResolve( true )
++                                     .withGraphs( mod.newGraphComposition()
++                                                     .withGraph( mod.newGraphDescription()
++                                                                    .withRoots( pvr )
++                                                                    .withPreset( "runtime" )
++                                                                    .build() )
++                                                     .build() )
++                                     .withMetas( RepositoryContentRequest.NO_METAS_SET )
++                                     .build();
++
++        RepoContentResult result = mod.repositoryContent( req );
++
++        if ( result != null )
++        {
++            for ( ProjectVersionRef ref : result )
++            {
++                ProjectRepoContent projectContent = result.getProject( ref );
++                for ( ArtifactRepoContent arc : projectContent )
++                {
++                    System.out.println( arc.getArtifact().toString() );
++                }
++            }
++        }
++
++        return result;
++    }
++
+     public GraphExport exportGraph()
+             throws AproxClientException
+     {
+diff --git a/aprox/aprox-depgraph-examples/src/test/java/org/commonjava/aprox/ex/AbstractGistTest.java b/aprox/aprox-depgraph-examples/src/test/java/org/commonjava/aprox/ex/AbstractGistTest.java
+index 854c875..daf16f6 100644
+--- a/aprox/aprox-depgraph-examples/src/test/java/org/commonjava/aprox/ex/AbstractGistTest.java
++++ b/aprox/aprox-depgraph-examples/src/test/java/org/commonjava/aprox/ex/AbstractGistTest.java
+@@ -1,11 +1,14 @@
+ package org.commonjava.aprox.ex;
+ 
++import org.apache.commons.io.FileUtils;
+ import org.commonjava.aprox.test.fixture.core.CoreServerFixture;
+ import org.junit.After;
+ import org.junit.Before;
+ import org.junit.Rule;
+ import org.junit.rules.TemporaryFolder;
+ 
++import java.io.File;
++
+ /**
+  * Created by jdcasey on 8/20/15.
+  */
+@@ -15,7 +18,7 @@
+     @Rule
+     public TemporaryFolder temp = new TemporaryFolder();
+ 
+-//    protected CoreServerFixture fixture;
++    protected CoreServerFixture fixture;
+ 
+     protected Gist gist;
+ 
+@@ -23,11 +26,14 @@
+     public void before()
+             throws Exception
+     {
+-//        fixture = new CoreServerFixture( temp );
+-//        fixture.start();
+-
+-//        gist = new Gist( fixture.getUrl() );
+-        gist = new Gist( "http://10.3.8.115/api" );
++        fixture = new CoreServerFixture( temp );
++        File f = new File( fixture.getBootOptions().getAproxHome(), "etc/aprox/conf.d/scheduler.conf" );
++        f.getParentFile().mkdirs();
++        FileUtils.write( f, "[scheduler]\nenabled=false" );
++        fixture.start();
++
++        gist = new Gist( fixture.getUrl() );
++//        gist = new Gist( "http://10.3.8.115/api" );
+     }
+ 
+     @After
+@@ -38,10 +44,10 @@ public void after()
+             gist.close();
+         }
+ 
+-//        if ( fixture != null )
+-//        {
+-//            fixture.close();
+-//        }
++        if ( fixture != null )
++        {
++            fixture.close();
++        }
+     }
+ 
+ }
+diff --git a/aprox/aprox-depgraph-examples/src/test/java/org/commonjava/aprox/ex/CollateTest.java b/aprox/aprox-depgraph-examples/src/test/java/org/commonjava/aprox/ex/CollateTest.java
+index a0ba86c..59d9762 100644
+--- a/aprox/aprox-depgraph-examples/src/test/java/org/commonjava/aprox/ex/CollateTest.java
++++ b/aprox/aprox-depgraph-examples/src/test/java/org/commonjava/aprox/ex/CollateTest.java
+@@ -11,6 +11,7 @@
+ {
+ 
+     @Test
++    @Ignore
+     public void collateByScmUrlAndGroupId()
+             throws Exception
+     {
+diff --git a/aprox/aprox-depgraph-examples/src/test/java/org/commonjava/aprox/ex/RepoContentTest.java b/aprox/aprox-depgraph-examples/src/test/java/org/commonjava/aprox/ex/RepoContentTest.java
+new file mode 100644
+index 0000000..2cf9d48
+--- /dev/null
++++ b/aprox/aprox-depgraph-examples/src/test/java/org/commonjava/aprox/ex/RepoContentTest.java
+@@ -0,0 +1,28 @@
++package org.commonjava.aprox.ex;
++
++import org.commonjava.aprox.depgraph.model.RepoContentResult;
++import org.commonjava.cartographer.result.GraphExport;
++import org.hamcrest.CoreMatchers;
++import org.junit.Assert;
++import org.junit.Ignore;
++import org.junit.Test;
++
++/**
++ * Created by jdcasey on 8/20/15.
++ */
++public class RepoContentTest
++        extends AbstractGistTest
++{
++
++    @Test
++    public void exportGraph()
++            throws Exception
++    {
++        RepoContentResult content = gist.graphRepoContent();
++
++        Assert.assertNotNull( content );
++        Assert.assertThat( content.getProjects(), CoreMatchers.notNullValue() );
++        Assert.assertThat( content.getProjects().isEmpty(), CoreMatchers.equalTo( false ) );
++    }
++
++}
+
+
+
+
+Processing repo: atlas
+GET https://api.github.com/repos/jdcasey/atlas/branches
+GET https://api.github.com/repos/Commonjava/atlas/branches
+Processing branch: api-cleanup
+Using org branch: api-cleanup
+Diff URL: https://api.github.com/repos/Commonjava/atlas/compare/Commonjava:api-cleanup...jdcasey:api-cleanup
+
+Processing branch: baremetal
+Using org branch: baremetal
+Diff URL: https://api.github.com/repos/Commonjava/atlas/compare/Commonjava:baremetal...jdcasey:baremetal
+
+Processing branch: carto-ops-refactor
+Processing branch: graph-drivers
+Using org branch: graph-drivers
+Diff URL: https://api.github.com/repos/Commonjava/atlas/compare/Commonjava:graph-drivers...jdcasey:graph-drivers
+
+Processing branch: graphdb-migration
+Processing branch: jpa-driver
+Using org branch: jpa-driver
+Diff URL: https://api.github.com/repos/Commonjava/atlas/compare/Commonjava:jpa-driver...jdcasey:jpa-driver
+
+Processing branch: jung-fixup
+Using org branch: jung-fixup
+Diff URL: https://api.github.com/repos/Commonjava/atlas/compare/Commonjava:jung-fixup...jdcasey:jung-fixup
+
+Processing branch: master
+Using org branch: master
+Diff URL: https://api.github.com/repos/Commonjava/atlas/compare/Commonjava:master...jdcasey:master
+
+Processing branch: neo4j-upgrade
+Using org branch: neo4j-upgrade
+Diff URL: https://api.github.com/repos/Commonjava/atlas/compare/Commonjava:neo4j-upgrade...jdcasey:neo4j-upgrade
