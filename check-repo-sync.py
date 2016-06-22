@@ -10,7 +10,7 @@ if len(sys.argv) > 1:
 else:
 	user = os.getenv('USER')
 
-tools = gh.GHTools()
+tools = gh.GHTools(user)
 repos=tools.get_user_repos()
 
 print "Looking for %s's repository branches that have fallen out of sync." % user

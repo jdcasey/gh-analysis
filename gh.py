@@ -12,7 +12,9 @@ API_URL='https://api.github.com%s'
 
 
 class GHTools(object):
-    def __init__(self):
+    def __init__(self, user=None):
+        self.user = user or os.getenv('USER')
+
         self.headers = {'Accept': 'application/vnd.github.v3+json'}
         token_ready=False
         if os.path.exists(TOKEN_FILE):
@@ -60,7 +62,7 @@ class GHTools(object):
 
     def get_user_repos(self):
         url=API_URL % ("/user/repos")
-        return self._filter_opt_out_repos(self.do_get(url, "Failed to retrieve user repos.") or [], os.getenv('USER'))
+        return self._filter_opt_out_repos(self.do_get(url, "Failed to retrieve user repos.") or [], self.user)
 
     def get_org_repos(self, org):
         url=API_URL % ("/orgs/%s/repos" % org)
