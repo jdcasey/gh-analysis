@@ -4,14 +4,21 @@ import sys
 import gh
 
 if len(sys.argv) < 2:
-    print "Usage: %s <org-name> [<org-name>]*" % sys.argv[0]
+    print "Usage: %s <group-name> [<org-name>]*" % sys.argv[0]
     exit(1)
 
 total=0
-for org in sys.argv[1:]:
+group = sys.argv[1]
+tools = gh.GHTools(group=group)
+
+if len(sys.argv) < 3:
+    orgs = tools.get_group_orgs()
+else:
+    orgs = sys.argv[2:]
+
+for org in orgs:
     print "Checking %s repos..." % org
-    tools = gh.GHTools()
-    repos=tools.get_org_repos(org)
+    repos=tools.get_org_group_repos(org)
 
     for repo in repos:
         name=str(repo['name'])

@@ -3,24 +3,47 @@ import sys
 import requests
 import getpass
 import yaml
+import json
+import logging
 from requests.auth import HTTPBasicAuth
 
-TOKEN_FILE=os.path.join(os.getenv('HOME'), '.gh', 'token')
-OPT_OUT_FILE=os.path.join(os.getenv('HOME'), '.gh', 'opt-out.yaml')
+try:
+    import http.client as http_client
+except ImportError:
+    # Python 2
+    import httplib as http_client
+http_client.HTTPConnection.debuglevel = 1
+
+def init_debug():
+    # initialize logging
+    logging.basicConfig()
+    logging.getLogger().setLevel(logging.DEBUG)
+
+    requests_log = logging.getLogger("requests.packages.urllib3")
+    requests_log.setLevel(logging.DEBUG)
+    requests_log.propagate = True    
+
+GH_HOME=os.path.join(os.getenv('HOME'), '.gh')
+TOKEN_FILE=os.path.join(GH_HOME, 'token')
+OPT_OUT_FILE=os.path.join(GH_HOME, 'opt-out.yaml')
 
 API_URL='https://api.github.com%s'
 
+#init_debug()
 
 class GHTools(object):
-    def __init__(self, user=None):
+    def __init__(self, user=None, group=None):
         self.user = user or os.getenv('USER')
 
         self.headers = {'Accept': 'application/vnd.github.v3+json'}
+        self.post_headers = {'Content-Type': 'application/vnd.github.v3+json'}
         token_ready=False
         if os.path.exists(TOKEN_FILE):
             with open(TOKEN_FILE) as f:
                 token = f.read()
                 self.headers['Authorization'] = "token %s" % token
+                self.post_headers['Authorization'] = "token %s" % token
+
             try:
                 self.do_get(API_URL % '/', "Failed to verify OAuth token")
                 token_ready=True
@@ -36,6 +59,7 @@ class GHTools(object):
 
             token = r.json()['token']
             self.headers['Authorization'] = "token %s" % token
+            self.post_headers['Authorization'] = "token %s" % token
             d = os.path.dirname(TOKEN_FILE)
             if not os.path.isdir(d):
                 os.makedirs(d)
@@ -49,6 +73,16 @@ class GHTools(object):
         else:
             self.opt_out = {}
 
+        if group is not None:
+            group_path = os.path.join(GH_HOME, group + ".yaml")
+            if os.path.exists(group_path):
+                with open(group_path) as f:
+                    self.group = yaml.load(f)
+            else:
+                raise Exception("No such project grouping found: %s" % group_path)
+        else:
+            self.group = {}
+
     def _filter_opt_out_repos(self, repos, owner):
         excluded = self.opt_out.get(owner)
         if repos is not None and excluded is not None:
@@ -60,6 +94,20 @@ class GHTools(object):
 
         return repos
 
+    def _filter_group_repos(self, repos, owner):
+        included = self.group.get(owner)
+        if repos is not None and included is not None:
+            result = []
+            for repo in repos:
+                if str(repo['name']) in included:
+                    result.append(repo)
+            repos = result
+
+        return repos
+
+    def get_group_orgs(self):
+        return self.group.keys()
+
     def get_user_repos(self):
         url=API_URL % ("/user/repos")
         return self._filter_opt_out_repos(self.do_get(url, "Failed to retrieve user repos.") or [], self.user)
@@ -67,6 +115,14 @@ class GHTools(object):
     def get_org_repos(self, org):
         url=API_URL % ("/orgs/%s/repos" % org)
         return self._filter_opt_out_repos(self.do_get(url, "Failed to retrieve organization repos.") or [], org)
+
+    def get_user_group_repos(self):
+        url=API_URL % ("/user/repos")
+        return self._filter_group_repos(self.do_get(url, "Failed to retrieve user repos.") or [], self.user)
+
+    def get_org_group_repos(self, org):
+        url=API_URL % ("/orgs/%s/repos" % org)
+        return self._filter_group_repos(self.do_get(url, "Failed to retrieve organization repos.") or [], org)
 
     def get_branches(self, owner, repo):
         url=API_URL % ("/repos/%s/%s/branches" % (owner, repo))
@@ -95,6 +151,32 @@ class GHTools(object):
 
     def get_pulls(self, pulls_url):
         return self.do_get(pulls_url.replace('{/number}', ''), "Failed to retrieve pull requests.") or []
+
+    def create_tag(self, tag_name, tag_color_hex, owner, repo):
+        url = API_URL % ("/repos/%(owner)s/%(repo)s/labels" % {'owner': owner, 'repo': repo})
+
+        fail_message = "Failed to create tag: %(tag)s with color: %(color)s in: %(owner)s/%(repo)s." % {
+                'tag': tag_name, 
+                'color': tag_color_hex, 
+                'owner': owner, 
+                'repo': repo
+                }
+
+        json_dict= {'name': tag_name, 'color': tag_color_hex}
+
+        return self.do_post(url, json_dict, fail_message)
+
+    def do_post(self, url, json_dict, fail_message):
+        print "POST: %s\n%s" % (url, json.dumps(json_dict))
+        r=requests.post(url, json=json_dict, headers=self.post_headers)
+        if r.status_code == requests.codes.created:
+            return r.json()
+        else:
+            raise Exception("%(fail_message)s. Reason: %(response)s" % {
+                'fail_message': fail_message,
+                'response': str(r)
+                })
+
 
     def do_get(self, url, fail_message, headers=None):
         # print "GET %s" % url
