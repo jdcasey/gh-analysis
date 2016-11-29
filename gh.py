@@ -12,9 +12,10 @@ try:
 except ImportError:
     # Python 2
     import httplib as http_client
-http_client.HTTPConnection.debuglevel = 1
 
 def init_debug():
+    http_client.HTTPConnection.debuglevel = 1
+    
     # initialize logging
     logging.basicConfig()
     logging.getLogger().setLevel(logging.DEBUG)
@@ -127,6 +128,15 @@ class GHTools(object):
     def get_branches(self, owner, repo):
         url=API_URL % ("/repos/%s/%s/branches" % (owner, repo))
         return self.do_get(url, "Failed to retrieve branches of: %s owned by: %s." % (repo, owner)) or []
+
+    def get_issues(self, owner, repo, label=None):
+        params = ''
+        if label is not None:
+            params = "?labels=%s" % label
+
+        url=API_URL % ("/repos/%s/%s/issues%s" % (owner, repo, params))
+
+        return self.do_get(url, "Failed to retrieve issues of: %s owned by: %s." % (repo, owner)) or []
 
     def get_diff(self, repo, org_branch_data, user_branch_data):
         url=API_URL % ('/repos/%(org)s/%(repo)s/compare/%(org)s:%(org_branch)s...%(user)s:%(user_branch)s' % {
