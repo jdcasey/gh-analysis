@@ -25,12 +25,12 @@ for org in orgs:
         name=str(repo['name'])
         print "%s/%s:" % (org, name)
         
-        issues = tools.get_issues(org, name, label=label)
+        issues = tools.get_issues(org, name, label=label, state='all')
         if len(issues) > 0:
             total += len(issues)
             for issue in issues:
                 t = 'PR' if issue.get('pull_request') is not None else 'ISSUE'
-                print "  - %(type)s #%(number)s: %(title)s [%(state)s]\n      URL: %(url)s" % {'number': issue['number'], 'title': issue['title'], 'state': issue['state'], 'type': t, 'url': issue['url']}
+                print "  - %(type)s #%(number)s: %(title)s [%(state)s]\n      URL: %(url)s" % {'number': issue['number'], 'title': issue['title'], 'state': issue['state'], 'type': t, 'url': issue['html_url']}
         else:
             print "-NONE-"
 

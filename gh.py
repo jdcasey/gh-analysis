@@ -129,12 +129,19 @@ class GHTools(object):
         url=API_URL % ("/repos/%s/%s/branches" % (owner, repo))
         return self.do_get(url, "Failed to retrieve branches of: %s owned by: %s." % (repo, owner)) or []
 
-    def get_issues(self, owner, repo, label=None):
-        params = ''
+    def get_issues(self, owner, repo, label=None, state=None):
+        params = {}
         if label is not None:
-            params = "?labels=%s" % label
+            params["labels"] = label
+        if state is not None:
+            params["state"] = state
 
-        url=API_URL % ("/repos/%s/%s/issues%s" % (owner, repo, params))
+        if len(params) > 0:
+            query = "?" + "&".join(["%s=%s" % (k,params[k]) for k in params])
+        else:
+            query = ""
+
+        url=API_URL % ("/repos/%s/%s/issues%s" % (owner, repo, query))
 
         return self.do_get(url, "Failed to retrieve issues of: %s owned by: %s." % (repo, owner)) or []
 
